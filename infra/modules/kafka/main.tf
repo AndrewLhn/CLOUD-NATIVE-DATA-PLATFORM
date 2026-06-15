@@ -1,3 +1,12 @@
+terraform {
+  required_providers {
+    docker = {
+      source  = "kreuzwerker/docker"
+      version = "~> 3.0.1"
+    }
+  }
+}
+
 resource "docker_image" "kafka" {
   name = "confluentinc/cp-kafka:7.5.0"
 }
