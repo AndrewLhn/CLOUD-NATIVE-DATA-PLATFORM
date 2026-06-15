@@ -1,0 +1,19 @@
+version: '3.8'
+services:
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:29093'
+      KAFKA_LISTENERS: 'PLAINTEXT://kafka:29092,CONTROLLER://kafka:29093,PLAINTEXT_HOST://0.0.0.0:9092'
+
+  minio:
+    image: minio/minio
+    command: server /data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+  airflow:
+    image: apache/airflow:latest
