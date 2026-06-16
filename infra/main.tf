@@ -9,11 +9,11 @@ terraform {
 
 provider "docker" {
   host = "unix:///var/run/docker.sock"
-  api_version = "1.44" 
+
 }
 
-resource "docker_network" "data_platform_net" {
-  name = "data_platform_net"
+provider "docker" {
+  host = "unix:///var/run/docker.sock"
 }
 
 module "storage" {
