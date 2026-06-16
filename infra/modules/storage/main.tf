@@ -2,13 +2,13 @@ terraform {
   required_providers {
     docker = {
       source  = "kreuzwerker/docker"
-      version = "~> 3.0.1"
+      version = "~> 3.6"
     }
   }
 }
 
 resource "docker_image" "minio" {
-  name = "minio/minio:latest"
+  name = "minio/minio:${var.minio_version}"
 }
 
 resource "docker_container" "minio" {
