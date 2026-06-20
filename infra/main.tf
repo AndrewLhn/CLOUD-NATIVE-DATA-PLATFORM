@@ -28,3 +28,14 @@ module "kafka" {
   network_name  = docker_network.data_platform_net.name
   kafka_version = var.kafka_version
 }
+
+module "schema_registry" {
+  source       = "./modules/schema_registry"
+  network_name = docker_network.data_platform_net.name
+}
+
+module "kafka_connect" {
+  source       = "./modules/kafka_connect"
+  network_name = docker_network.data_platform_net.name
+  depends_on = [module.schema_registry]
+}
