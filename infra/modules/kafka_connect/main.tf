@@ -25,7 +25,7 @@ resource "docker_container" "kafka_connect" {
   }
 
   env = [
-    "CONNECT_BOOTSTRAP_SERVERS=${var.kafka_bootstrap_servers}",
+    "CONNECT_BOOTSTRAP_SERVERS=PLAINTEXT://kafka_broker:29092",
     "CONNECT_REST_PORT=8083",
     "CONNECT_REST_ADVERTISED_HOST_NAME=kafka_connect",
     "CONNECT_GROUP_ID=quickstart-connect",

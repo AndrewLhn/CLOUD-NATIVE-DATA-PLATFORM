@@ -26,7 +26,8 @@ resource "docker_container" "schema_registry" {
 
   env = [
     "SCHEMA_REGISTRY_HOST_NAME=schema_registry",
-    "SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS=${var.kafka_bootstrap_servers}",
-    "SCHEMA_REGISTRY_LISTENERS=http://0.0.0.0:8081"
+    "SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS=PLAINTEXT://kafka_broker:29092",
+    "SCHEMA_REGISTRY_LISTENERS=http://0.0.0.0:8081",
+    "SCHEMA_REGISTRY_KAFKASTORE_TOPIC_REPLICATION_FACTOR=1"
   ]
 }

@@ -11,10 +11,12 @@ provider "docker" {
   host = "unix:///var/run/docker.sock"
 }
 
+# 1. Сеть
 resource "docker_network" "data_platform_net" {
   name = "data_platform_net"
 }
 
+# 2. Хранилище MinIO
 module "storage" {
   source              = "./modules/storage"
   network_name        = docker_network.data_platform_net.name
@@ -23,19 +25,23 @@ module "storage" {
   minio_root_password = var.minio_root_password
 }
 
+# 3. Модуль Кафки
 module "kafka" {
   source        = "./modules/kafka"
   network_name  = docker_network.data_platform_net.name
-  kafka_version = var.kafka_version
+  kafka_version = var.kafka_version 
 }
 
+# 4. Модуль Schema Registry
 module "schema_registry" {
   source       = "./modules/schema_registry"
   network_name = docker_network.data_platform_net.name
+  depends_on   = [module.kafka]
 }
 
+# 5. Модуль Kafka Connect
 module "kafka_connect" {
   source       = "./modules/kafka_connect"
   network_name = docker_network.data_platform_net.name
-  depends_on = [module.schema_registry]
+  depends_on   = [module.schema_registry, module.kafka]
 }
