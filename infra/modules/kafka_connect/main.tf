@@ -15,6 +15,13 @@ resource "docker_container" "kafka_connect" {
   name  = "kafka_connect"
   image = docker_image.kafka_connect.image_id
 
+  user = "root"
+
+  command = [
+    "bash", "-c",
+    "confluent-hub install --no-prompt confluentinc/kafka-connect-s3:10.5.1 && /etc/confluent/docker/run"
+  ]
+
   networks_advanced {
     name = var.network_name
   }
