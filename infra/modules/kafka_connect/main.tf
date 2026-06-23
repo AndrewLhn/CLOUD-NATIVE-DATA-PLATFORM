@@ -19,7 +19,7 @@ resource "docker_container" "kafka_connect" {
 
   command = [
     "bash", "-c",
-    "confluent-hub install --no-prompt confluentinc/kafka-connect-s3:10.5.1 && /etc/confluent/docker/run"
+    "confluent-hub install --no-prompt confluentinc/kafka-connect-s3:10.5.1 && confluent-hub install --no-prompt tabular/iceberg-kafka-connect-runtime:0.7.0 && /etc/confluent/docker/run"
   ]
 
   networks_advanced {
@@ -47,6 +47,7 @@ resource "docker_container" "kafka_connect" {
     "CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL=http://schema_registry:8081",
     "CONNECT_INTERNAL_KEY_CONVERTER=org.apache.kafka.connect.json.JsonConverter",
     "CONNECT_INTERNAL_VALUE_CONVERTER=org.apache.kafka.connect.json.JsonConverter",
-    "CONNECT_PLUGIN_PATH=/usr/share/java,/usr/share/confluent-hub-components"
+    "CONNECT_PLUGIN_PATH=/usr/share/java,/usr/share/confluent-hub-components",
+    "AWS_REGION=us-east-1"
   ]
 }

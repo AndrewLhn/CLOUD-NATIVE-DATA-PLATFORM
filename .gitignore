@@ -222,3 +222,5 @@ __marimo__/
 
 .terraform/
 .terraform.lock.hcl
+
+s3_sink_ready.json

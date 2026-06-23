@@ -20,7 +20,7 @@ resource "docker_container" "kafka" {
     external = 9092
   }
 
-  env = [
+    env = [
     "KAFKA_NODE_ID=1",
     "KAFKA_PROCESS_ROLES=broker,controller",
     "KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka_broker:29093",
