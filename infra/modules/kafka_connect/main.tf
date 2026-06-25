@@ -17,11 +17,11 @@ resource "docker_container" "kafka_connect" {
 
   user = "root"
 
-  command = [
+command = [
     "bash", "-c",
-    "confluent-hub install --no-prompt confluentinc/kafka-connect-s3:10.5.1 && confluent-hub install --no-prompt tabular/iceberg-kafka-connect-runtime:0.7.0 && /etc/confluent/docker/run"
+    "confluent-hub install --no-prompt confluentinc/kafka-connect-s3:10.5.1 && /etc/confluent/docker/run"
   ]
-
+    
   networks_advanced {
     name = var.network_name
   }
