@@ -1,12 +1,30 @@
+import json
+import pyarrow as pa
 from confluent_kafka import Consumer
 from pyiceberg.catalog import load_catalog
-import json
+from pyiceberg.schema import Schema
+from pyiceberg.types import NestedField, StringType, IntegerType
 
-catalog = load_catalog("default", **{
-    "uri": "thrift://localhost:9083", 
-    "warehouse": "s3://my-warehouse"
-})
-table = catalog.load_table("my_db.my_table")
+catalog = load_catalog(
+    "default",
+    **{
+        "type": "sql",
+        "uri": "sqlite:///iceberg_catalog.db",
+        "warehouse": "./warehouse"
+    }
+)
+
+if "my_db" not in catalog.list_namespaces():
+    catalog.create_namespace("my_db")
+
+try:
+    table = catalog.load_table("my_db.my_table")
+except:
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=IntegerType(), required=True),
+        NestedField(field_id=2, name="data", field_type=StringType(), required=False),
+    )
+    table = catalog.create_table("my_db.my_table", schema=schema)
 
 consumer = Consumer({
     'bootstrap.servers': 'localhost:9092',
@@ -15,16 +33,21 @@ consumer = Consumer({
 })
 consumer.subscribe(['my_topic'])
 
+print("Consumer запущен и ждет сообщения...")
+
 try:
     while True:
         msg = consumer.poll(1.0)
         if msg is None: continue
+        if msg.error(): continue
         
-        data = json.loads(msg.value().decode('utf-8'))
+        raw_data = json.loads(msg.value().decode('utf-8'))
         
-        # Запись в Iceberg
-        table.append(data)
-        print(f"Записано: {data}")
+        arrow_table = pa.Table.from_pylist([raw_data])
+        
+        table.append(arrow_table)
+        print(f"Записано в Iceberg: {raw_data}")
+
 except KeyboardInterrupt:
     pass
 finally:

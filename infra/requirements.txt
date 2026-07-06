@@ -1,0 +1,4 @@
+confluent-kafka
+pyiceberg[hive]
+pyiceberg[pyarrow]
+thrift
