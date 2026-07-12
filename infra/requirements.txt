@@ -2,3 +2,7 @@ confluent-kafka
 pyiceberg[hive]
 pyiceberg[pyarrow]
 thrift
+confluent-kafka
+pyiceberg
+pyarrow
+s3fs
