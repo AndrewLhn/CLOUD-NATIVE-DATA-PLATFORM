@@ -4,20 +4,31 @@ from confluent_kafka import Consumer, KafkaError
 from pyiceberg.catalog import load_catalog
 from pyiceberg.schema import Schema
 from pyiceberg.types import NestedField, StringType, IntegerType
+from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 
 catalog = load_catalog(
     "default",
     **{"type": "sql", "uri": "sqlite:///iceberg_catalog.db", "warehouse": "./warehouse"}
 )
 
+namespace = "my_db"
+namespaces = catalog.list_namespaces()
+if namespace not in namespaces:
+    print(f"Создаем пространство имен: {namespace}")
+    catalog.create_namespace(namespace)
+else:
+    print(f"Namespace {namespace} уже существует.")
+
 try:
-    table = catalog.load_table("my_db.my_table")
-except Exception:
+    table = catalog.load_table(f"{namespace}.my_table")
+    print("Таблица загружена.")
+except NoSuchTableError:
+    print("Создаем новую таблицу...")
     schema = Schema(
         NestedField(field_id=1, name="id", field_type=IntegerType(), required=True),
         NestedField(field_id=2, name="data", field_type=StringType(), required=False),
     )
-    table = catalog.create_table("my_db.my_table", schema=schema)
+    table = catalog.create_table(f"{namespace}.my_table", schema=schema)
 
 consumer = Consumer({
     'bootstrap.servers': '127.0.0.1:9092',
@@ -26,7 +37,10 @@ consumer = Consumer({
 })
 consumer.subscribe(['my_topic'])
 
-arrow_schema = pa.schema([('id', pa.int32()), ('data', pa.string())])
+arrow_schema = pa.schema([
+    pa.field('id', pa.int32(), nullable=False),
+    pa.field('data', pa.string(), nullable=True)
+])
 
 print("Consumer запущен и ждет сообщения...")
 
@@ -39,10 +53,14 @@ try:
                 print(f"Ошибка Kafka: {msg.error()}")
             continue
             
-        data = json.loads(msg.value().decode('utf-8'))
-        arrow_table = pa.Table.from_pylist([data], schema=arrow_schema)
-        table.append(arrow_table)
-        print(f"Успешно записано: {data}")
+        try:
+            data = json.loads(msg.value().decode('utf-8'))
+            arrow_table = pa.Table.from_pylist([data], schema=arrow_schema)
+            table.append(arrow_table)
+            print(f"Успешно записано: {data}")
+        except Exception as e:
+            print(f"Ошибка обработки сообщения: {e}")
+
 except KeyboardInterrupt:
     pass
 finally:
