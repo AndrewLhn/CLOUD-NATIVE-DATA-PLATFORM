@@ -1,0 +1,2 @@
+pyiceberg[sql-postgres]
+psycopg2-binary

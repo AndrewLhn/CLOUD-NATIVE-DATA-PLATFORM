@@ -62,7 +62,7 @@ try:
             
         try:
             data = json.loads(msg.value().decode('utf-8'))
-            arrow_table = pa.Table.from_pylist([data], schema=arrow_schema)
+            arrow_table = pa.Table.from_pylist([data], schema=arrow_schema)пше 
             table.append(arrow_table)
             print(f"Успешно записано в Iceberg: {data}")
         except Exception as e:
