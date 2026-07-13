@@ -5,7 +5,6 @@ from pyiceberg.catalog import load_catalog
 from pyiceberg.schema import Schema
 from pyiceberg.types import NestedField, StringType, IntegerType
 
-# 1. Инициализация каталога
 catalog = load_catalog(
     "default",
     **{
@@ -20,7 +19,6 @@ catalog = load_catalog(
     }
 )
 
-# 2. Инициализация пространства имен
 namespace = "my_db"
 try:
     catalog.create_namespace(namespace)
@@ -28,7 +26,6 @@ try:
 except:
     print(f"Namespace {namespace} уже существует.")
 
-# 3. Инициализация таблицы (вынесена ДО цикла)
 try:
     table = catalog.load_table(f"{namespace}.my_table")
     print("Таблица загружена.")
@@ -40,7 +37,6 @@ except:
     )
     table = catalog.create_table(f"{namespace}.my_table", schema=schema)
 
-# 4. Настройка Kafka
 consumer = Consumer({
     'bootstrap.servers': '127.0.0.1:9092',
     'group.id': 'my-python-consumer',
@@ -55,7 +51,6 @@ arrow_schema = pa.schema([
 
 print("Consumer запущен и ждет сообщения...")
 
-# 5. Основной цикл
 try:
     while True:
         msg = consumer.poll(1.0)
@@ -68,7 +63,6 @@ try:
         try:
             data = json.loads(msg.value().decode('utf-8'))
             arrow_table = pa.Table.from_pylist([data], schema=arrow_schema)
-            # Теперь table определена здесь корректно
             table.append(arrow_table)
             print(f"Успешно записано в Iceberg: {data}")
         except Exception as e:
