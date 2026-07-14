@@ -1,2 +1,3 @@
+sqlalchemy>=2.0.0
 pyiceberg[sql-postgres]
 psycopg2-binary
