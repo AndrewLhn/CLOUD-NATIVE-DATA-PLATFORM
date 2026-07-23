@@ -224,3 +224,4 @@ __marimo__/
 .terraform.lock.hcl
 
 s3_sink_ready.json
+minio_data/
