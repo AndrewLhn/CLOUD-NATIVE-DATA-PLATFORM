@@ -1,6 +1,6 @@
 COMPOSE := docker compose
 
-.PHONY: up down logs build validate
+.PHONY: up down logs build validate lint
 
 up:
 	$(COMPOSE) up -d --build
@@ -17,3 +17,6 @@ build:
 validate:
 	$(COMPOSE) config --quiet
 	python3 -m compileall -q dags infra
+
+lint:
+	ruff check dags infra

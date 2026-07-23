@@ -1,5 +1,6 @@
-from confluent_kafka import Producer
 import json
+
+from confluent_kafka import Producer
 
 p = Producer({'bootstrap.servers': '127.0.0.1:9092'})
 

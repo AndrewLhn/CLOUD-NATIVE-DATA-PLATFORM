@@ -3,7 +3,6 @@ from datetime import datetime
 from airflow import DAG
 from airflow.operators.bash import BashOperator
 
-
 with DAG(
     dag_id="kafka_to_iceberg",
     start_date=datetime(2026, 1, 1),

@@ -1,0 +1,12 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+airflow/
+dags/
+infra/
+minio_data/
+trino_error.txt

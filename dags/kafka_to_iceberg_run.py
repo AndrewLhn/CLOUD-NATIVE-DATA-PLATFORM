@@ -6,7 +6,6 @@ from confluent_kafka import Consumer
 from pyiceberg.catalog import load_catalog
 from pyiceberg.exceptions import NoSuchTableError
 
-
 TABLE_IDENTIFIER = "my_db.my_table"
 EVENT_SCHEMA = pa.schema([
     ("id", pa.int64()),

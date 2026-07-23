@@ -13,6 +13,5 @@ os.environ.setdefault("MINIO_ROOT_PASSWORD", "minioadmin")
 
 from dags.kafka_to_iceberg_run import run_sync  # noqa: E402
 
-
 if __name__ == "__main__":
     run_sync()

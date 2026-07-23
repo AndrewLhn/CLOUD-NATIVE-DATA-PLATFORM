@@ -28,6 +28,10 @@ SELECT * FROM iceberg.my_db.my_table;
 
 ## Configuration
 
-Copy `.env.example` to `.env` and replace the development credentials before exposing the stack. `.env` is intentionally ignored by Git.
+Copy `.env.example` to `.env` and replace the example credentials before exposing the stack. The local `.env` uses conventional development credentials and is intentionally ignored by Git.
+
+## Quality gates
+
+Install local quality tools with `python3 -m pip install -r requirements-dev.txt`, then run `make validate` and `make lint` before committing. CI runs the same Compose and Python checks plus Ruff on every pull request and push to `main`.
 
 Terraform under `infra/` is legacy and must not be applied together with this Compose stack: it provisions containers with overlapping names and ports.
