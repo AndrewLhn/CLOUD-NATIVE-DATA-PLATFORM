@@ -1,11 +1,19 @@
-init:
-	cd infra && terraform init
+COMPOSE := docker compose
+
+.PHONY: up down logs build validate
 
 up:
-	docker-compose -f docker/docker-compose.yaml up -d
+	$(COMPOSE) up -d --build
 
-clean:
-	docker-compose -f docker/docker-compose.yaml down -v
+down:
+	$(COMPOSE) down
 
-test-dbt:
-	cd dbt && dbt test
+logs:
+	$(COMPOSE) logs -f
+
+build:
+	$(COMPOSE) build
+
+validate:
+	$(COMPOSE) config --quiet
+	python3 -m compileall -q dags infra

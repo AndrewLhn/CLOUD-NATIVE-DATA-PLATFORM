@@ -1,65 +1,80 @@
+import json
+import os
 
-def run_sync():
-    import json
-    import pyarrow as pa
-    from confluent_kafka import Consumer
-    from pyiceberg.catalog import load_catalog
-    from pyiceberg.exceptions import NoSuchTableError
+import pyarrow as pa
+from confluent_kafka import Consumer
+from pyiceberg.catalog import load_catalog
+from pyiceberg.exceptions import NoSuchTableError
 
-    print("Запуск синхронизации внутри изолированного окружения...")
-    
-    catalog = load_catalog("default", **{
-        "type": "sql",
-        "uri": "sqlite:////opt/airflow/iceberg_catalog.db",
-        "warehouse": "s3://warehouse",
-        "s3.endpoint": "http://minio:9000",
-        "s3.access-key-id": "minioadmin",
-        "s3.secret-access-key": "minioadmin"
-    })
 
-    try:
+TABLE_IDENTIFIER = "my_db.my_table"
+EVENT_SCHEMA = pa.schema([
+    ("id", pa.int64()),
+    ("data", pa.string()),
+])
+
+
+def get_catalog():
+    return load_catalog(
+        "default",
+        **{
+            "type": "sql",
+            "uri": os.environ["ICEBERG_CATALOG_URI"],
+            "warehouse": os.environ["ICEBERG_WAREHOUSE"],
+            "py-io-impl": "pyiceberg.io.pyarrow.PyArrowFileIO",
+            "s3.endpoint": os.environ["MINIO_ENDPOINT"],
+            "s3.access-key-id": os.environ["MINIO_ROOT_USER"],
+            "s3.secret-access-key": os.environ["MINIO_ROOT_PASSWORD"],
+            "s3.region": "us-east-1",
+            "s3.path-style-access": "true",
+        },
+    )
+
+
+def get_table(catalog):
+    if not catalog.namespace_exists("my_db"):
         catalog.create_namespace("my_db")
-    except Exception:
-        pass
-
-    schema = pa.schema([
-        ("id", pa.int64()),
-        ("name", pa.string()),
-    ])
 
     try:
-        table = catalog.load_table("my_db.my_table")
+        return catalog.load_table(TABLE_IDENTIFIER)
     except NoSuchTableError:
-        table = catalog.create_table("my_db.my_table", schema=schema)
-        print("Таблица my_db.my_table успешно создана.")
+        return catalog.create_table(TABLE_IDENTIFIER, schema=EVENT_SCHEMA)
 
-    consumer = Consumer({
-        'bootstrap.servers': 'kafka:29092', 
-        'group.id': 'airflow-consumer-group', 
-        'auto.offset.reset': 'earliest'
-    })
-    consumer.subscribe(['my_topic'])
-    
+
+def run_sync(max_messages: int = 100, poll_timeout: float = 1.0) -> int:
+    catalog = get_catalog()
+    table = get_table(catalog)
+    consumer = Consumer(
+        {
+            "bootstrap.servers": "kafka:29092",
+            "group.id": "airflow-iceberg-consumer",
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": False,
+        }
+    )
+    consumer.subscribe(["my_topic"])
+
     batch = []
-    print("Ожидание сообщений из Kafka...")
-    
-    for _ in range(10):
-        msg = consumer.poll(1.0) 
-        if msg is None:
-            break
-        if msg.error():
-            print(f"Ошибка Kafka: {msg.error()}")
-            continue
-        batch.append(json.loads(msg.value().decode('utf-8')))
-    
-    if batch:
-        arrow_table = pa.Table.from_pylist(batch)
-        table.append(arrow_table)
-        print(f"Успешно записано {len(batch)} сообщений в Iceberg.")
-    else:
-        print("Новых сообщений в Kafka не обнаружено.")
-        
-    consumer.close()
+    try:
+        for _ in range(max_messages):
+            message = consumer.poll(poll_timeout)
+            if message is None:
+                break
+            if message.error():
+                raise RuntimeError(f"Kafka error: {message.error()}")
+            batch.append(json.loads(message.value().decode("utf-8")))
+
+        if not batch:
+            print("No new Kafka messages.")
+            return 0
+
+        table.append(pa.Table.from_pylist(batch, schema=EVENT_SCHEMA))
+        consumer.commit(asynchronous=False)
+        print(f"Written {len(batch)} message(s) to {TABLE_IDENTIFIER}.")
+        return len(batch)
+    finally:
+        consumer.close()
+
 
 if __name__ == "__main__":
     run_sync()

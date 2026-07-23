@@ -1,88 +1,147 @@
-
 services:
   airflow-db:
-    image: postgres:15
-    container_name: airflow_db
+    image: postgres:15.8
     environment:
-      - POSTGRES_USER=airflow
-      - POSTGRES_PASSWORD=airflow
-      - POSTGRES_DB=airflow
+      POSTGRES_USER: ${POSTGRES_USER:-airflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-airflow}
+      POSTGRES_DB: ${POSTGRES_DB:-airflow}
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "airflow"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
-      retries: 5
-    networks:
-      - airflow-network
+      timeout: 5s
+      retries: 12
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [data-platform]
 
-  airflow-standalone:
-    build: .
-    container_name: airflow_instance
+  iceberg-db-init:
+    image: postgres:15.8
     depends_on:
       airflow-db:
         condition: service_healthy
     environment:
-      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@airflow-db/airflow
-      - AIRFLOW__CORE__LOAD_EXAMPLES=False
-    ports:
-      - "8080:8080"
-    command: standalone
-    volumes:
-      - ./dags:/opt/airflow/dags
-      - ./airflow/logs:/opt/airflow/logs
-      - ./airflow/plugins:/opt/airflow/plugins
-    networks:
-      - airflow-network
+      PGHOST: airflow-db
+      PGUSER: ${POSTGRES_USER:-airflow}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-airflow}
+      ICEBERG_CATALOG_DB: ${ICEBERG_CATALOG_DB:-iceberg_metadata}
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        until pg_isready -d postgres; do sleep 2; done
+        psql -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$$ICEBERG_CATALOG_DB'" | grep -q 1 || psql -d postgres -c "CREATE DATABASE \"$$ICEBERG_CATALOG_DB\""
+    restart: "no"
+    networks: [data-platform]
 
   kafka:
     image: confluentinc/cp-kafka:7.4.0
-    container_name: kafka_broker
     ports:
       - "9092:9092"
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka_broker:9093
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
       KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka_broker:29092,EXTERNAL://localhost:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
-      CLUSTER_ID: "adEDeFVeR-O1JUXr1fqMBQ"
+      CLUSTER_ID: adEDeFVeR-O1JUXr1fqMBQ
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-    networks:
-      - airflow-network
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+    networks: [data-platform]
 
   minio:
-    image: minio/minio
-    container_name: minio_storage
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     ports:
       - "9000:9000"
       - "9001:9001"
     volumes:
-      - ./minio_data:/data
-    networks:
-      - airflow-network
-  
-  trino:
-    image: trinodb/trino:latest
-    container_name: trino
-    mem_limit: 4g
-    ports:
-      - "8082:8080"  
-    volumes:
-      - ./trino:/etc/trino
+      - minio_data:/data
+    networks: [data-platform]
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-05-21T01-59-54Z
+    depends_on:
+      minio:
+        condition: service_started
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        until mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"; do sleep 2; done
+        mc mb --ignore-existing local/warehouse
+    restart: "no"
+    networks: [data-platform]
+
+  airflow-standalone:
+    build: .
     depends_on:
       airflow-db:
         condition: service_healthy
-      minio:
-        condition: service_started
-    networks:
-      - airflow-network
+      kafka:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      iceberg-db-init:
+        condition: service_completed_successfully
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD:-airflow}@airflow-db/${POSTGRES_DB:-airflow}
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      ICEBERG_CATALOG_URI: postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD:-airflow}@airflow-db/${ICEBERG_CATALOG_DB:-iceberg_metadata}
+      ICEBERG_WAREHOUSE: s3://warehouse/
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "8080:8080"
+    command: standalone
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - airflow_logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+    networks: [data-platform]
+
+  trino:
+    image: trinodb/trino:482
+    mem_limit: 4g
+    depends_on:
+      iceberg-db-init:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      POSTGRES_USER: ${POSTGRES_USER:-airflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-airflow}
+      ICEBERG_CATALOG_DB: ${ICEBERG_CATALOG_DB:-iceberg_metadata}
+    ports:
+      - "8082:8080"
+    volumes:
+      - ./trino:/etc/trino:ro
+    networks: [data-platform]
 
 networks:
-  airflow-network:
+  data-platform:
     driver: bridge
+
+volumes:
+  postgres_data:
+  minio_data:
+  airflow_logs:
