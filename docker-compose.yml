@@ -137,6 +137,23 @@ services:
       - ./trino:/etc/trino:ro
     networks: [data-platform]
 
+  dbt:
+    build: ./dbt
+    depends_on:
+      trino:
+        condition: service_started
+    environment:
+      DBT_TRINO_HOST: trino
+      DBT_TRINO_PORT: 8080
+      DBT_TRINO_USER: dbt
+      DBT_TRINO_CATALOG: iceberg
+      DBT_TRINO_SCHEMA: analytics
+    volumes:
+      - ./dbt:/usr/app
+    command: build
+    profiles: [tools]
+    networks: [data-platform]
+
 networks:
   data-platform:
     driver: bridge

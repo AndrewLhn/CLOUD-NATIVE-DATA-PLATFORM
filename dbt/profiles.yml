@@ -1,0 +1,13 @@
+cloud_native_data_platform:
+  target: dev
+  outputs:
+    dev:
+      type: trino
+      method: none
+      user: "{{ env_var('DBT_TRINO_USER', 'dbt') }}"
+      host: "{{ env_var('DBT_TRINO_HOST', 'localhost') }}"
+      port: "{{ env_var('DBT_TRINO_PORT', '8082') | int }}"
+      catalog: "{{ env_var('DBT_TRINO_CATALOG', 'iceberg') }}"
+      schema: "{{ env_var('DBT_TRINO_SCHEMA', 'analytics') }}"
+      threads: 4
+      retries: 3

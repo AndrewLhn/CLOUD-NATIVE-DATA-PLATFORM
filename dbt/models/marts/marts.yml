@@ -1,0 +1,36 @@
+version: 2
+
+models:
+  - name: dim_event_payloads
+    description: Deduplicated event payload dimension.
+    columns:
+      - name: event_hash
+        tests: [not_null, unique]
+      - name: event_payload
+        tests: [not_null, not_empty_string]
+
+  - name: fct_kafka_events
+    description: Analytics-ready event fact table.
+    columns:
+      - name: event_id
+        tests: [not_null, is_positive]
+      - name: event_hash
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_event_payloads')
+              field: event_hash
+      - name: event_payload
+        tests: [not_null, not_empty_string]
+      - name: transformed_at
+        tests: [not_null]
+
+  - name: mart_event_metrics_daily
+    description: Daily volume and payload-cardinality metrics.
+    columns:
+      - name: metric_date
+        tests: [not_null, unique]
+      - name: event_count
+        tests: [not_null, is_positive]
+      - name: distinct_payload_count
+        tests: [not_null, is_positive]

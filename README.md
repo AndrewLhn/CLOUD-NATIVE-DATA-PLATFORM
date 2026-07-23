@@ -26,6 +26,16 @@ Use a Trino client to run:
 SELECT * FROM iceberg.my_db.my_table;
 ```
 
+## dbt transformations
+
+dbt materializes a staging layer, a payload dimension, an event fact and a daily metrics mart in `iceberg.analytics`. First ingest at least one Kafka event, then run:
+
+```bash
+make dbt-build
+```
+
+Run only the data-quality checks with `make dbt-test`. The dbt service uses the optional Compose `tools` profile, so it does not run continuously.
+
 ## Configuration
 
 Copy `.env.example` to `.env` and replace the example credentials before exposing the stack. The local `.env` uses conventional development credentials and is intentionally ignored by Git.

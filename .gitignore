@@ -229,6 +229,11 @@ trino_error.txt
 infra/iceberg_catalog.db
 infra/warehouse/
 infra/s3_sink_ready.json
+
+# dbt build artefacts
+dbt/logs/
+dbt/target/
+dbt/dbt_packages/
 *.tfstate.backup
 
 .terraform/

@@ -1,6 +1,6 @@
 COMPOSE := docker compose
 
-.PHONY: up down logs build validate lint
+.PHONY: up down logs build validate lint dbt-build dbt-compile dbt-test
 
 up:
 	$(COMPOSE) up -d --build
@@ -20,3 +20,12 @@ validate:
 
 lint:
 	ruff check dags infra
+
+dbt-build:
+	$(COMPOSE) --profile tools run --rm dbt build
+
+dbt-compile:
+	$(COMPOSE) --profile tools run --rm dbt compile
+
+dbt-test:
+	$(COMPOSE) --profile tools run --rm dbt test

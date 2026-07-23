@@ -1,0 +1,26 @@
+version: 2
+
+sources:
+  - name: raw
+    description: Kafka events persisted by the Airflow ingestion DAG.
+    database: iceberg
+    schema: my_db
+    tables:
+      - name: kafka_events
+        identifier: my_table
+        columns:
+          - name: id
+            tests: [not_null]
+          - name: data
+            tests: [not_null, not_empty_string]
+
+models:
+  - name: stg_kafka_events
+    description: Typed and normalized Kafka events.
+    columns:
+      - name: event_id
+        tests: [not_null, is_positive]
+      - name: event_payload
+        tests: [not_null, not_empty_string]
+      - name: event_hash
+        tests: [not_null]
