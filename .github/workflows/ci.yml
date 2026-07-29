@@ -19,5 +19,7 @@ jobs:
       - run: cp .env.example .env
       - run: docker compose config --quiet
       - run: python -m compileall -q dags infra
+      - run: pip install -r requirements.txt
+      - run: python -c "from infra.producer import main"
       - run: pip install -r requirements-dev.txt
       - run: ruff check dags infra

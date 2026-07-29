@@ -1,3 +1,2 @@
-sqlalchemy>=2.0.0
-pyiceberg[sql-postgres]
-psycopg2-binary
+# Dependencies for the host-side producer documented in README.md.
+confluent-kafka==2.12.2

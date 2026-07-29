@@ -1,8 +1,4 @@
-confluent-kafka
-pyiceberg[hive]
-pyiceberg[pyarrow]
-thrift
-confluent-kafka
-pyiceberg
-pyarrow
-s3fs
+confluent-kafka==2.12.2
+pyarrow==14.0.1
+pyiceberg[sql-postgres,pyarrow]==0.6.0
+psycopg2-binary==2.9.9

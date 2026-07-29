@@ -44,4 +44,10 @@ Copy `.env.example` to `.env` and replace the example credentials before exposin
 
 Install local quality tools with `python3 -m pip install -r requirements-dev.txt`, then run `make validate` and `make lint` before committing. CI runs the same Compose and Python checks plus Ruff on every pull request and push to `main`.
 
-Terraform under `infra/` is legacy and must not be applied together with this Compose stack: it provisions containers with overlapping names and ports.
+Terraform files under `infra/` are retained only as an archived prototype. They are not part of the supported platform and must not be applied: the supported local deployment is exclusively `docker compose`.
+
+The archived `infra/Dockerfile` expects the repository root as its build context:
+
+```bash
+docker build -f infra/Dockerfile .
+```

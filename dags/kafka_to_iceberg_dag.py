@@ -1,13 +1,18 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from airflow import DAG
 from airflow.operators.bash import BashOperator
 
 with DAG(
     dag_id="kafka_to_iceberg",
-    start_date=datetime(2026, 1, 1),
+    start_date=datetime(2025, 1, 1),
     schedule="@hourly",
     catchup=False,
+    default_args={
+        "retries": 3,
+        "retry_delay": timedelta(minutes=5),
+        "execution_timeout": timedelta(minutes=5),
+    },
     tags=["kafka", "iceberg"],
 ) as dag:
     BashOperator(
