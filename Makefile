@@ -1,6 +1,6 @@
 COMPOSE := docker compose
 
-.PHONY: up down logs build validate lint dbt-build dbt-compile dbt-test
+.PHONY: up down logs build validate lint dbt-build dbt-compile dbt-test e2e
 
 up:
 	$(COMPOSE) up -d --build
@@ -29,3 +29,6 @@ dbt-compile:
 
 dbt-test:
 	$(COMPOSE) --profile tools run --rm dbt test
+
+e2e:
+	bash scripts/e2e.sh

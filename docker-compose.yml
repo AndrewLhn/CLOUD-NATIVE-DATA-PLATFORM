@@ -72,6 +72,7 @@ services:
 
   minio-init:
     image: minio/mc:RELEASE.2025-05-21T01-59-54Z
+    entrypoint: ["/bin/sh", "-ec"]
     depends_on:
       minio:
         condition: service_started
@@ -79,8 +80,6 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
     command:
-      - /bin/sh
-      - -ec
       - |
         until mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"; do sleep 2; done
         mc mb --ignore-existing local/warehouse

@@ -1,7 +1,7 @@
 import json
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from confluent_kafka import Producer
 
@@ -24,7 +24,7 @@ def main() -> None:
         "id": 1,
         "data": "hello world from python",
         "event_id": str(uuid.uuid4()),
-        "occurred_at": datetime.now(timezone.utc).isoformat(),
+        "occurred_at": datetime.now(UTC).isoformat(),
     }
     producer.produce(TOPIC, json.dumps(data).encode("utf-8"), on_delivery=delivery_report)
 

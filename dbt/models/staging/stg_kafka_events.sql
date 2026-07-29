@@ -1,11 +1,11 @@
 with source_events as (
     select
         cast(id as bigint) as event_id,
-        trim(data) as event_payload
-        , event_id as source_event_id
-        , cast(kafka_partition as integer) as kafka_partition
-        , cast(kafka_offset as bigint) as kafka_offset
-        , from_iso8601_timestamp(ingested_at) as ingested_at
+        trim(data) as event_payload,
+        event_id as source_event_id,
+        cast(kafka_partition as integer) as kafka_partition,
+        cast(kafka_offset as bigint) as kafka_offset,
+        from_iso8601_timestamp(ingested_at) as ingested_at
     from {{ source('raw', 'kafka_events') }}
 ),
 deduplicated_events as (

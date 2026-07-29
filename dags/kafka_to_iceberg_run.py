@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pyarrow as pa
 from confluent_kafka import Consumer, Producer
@@ -81,16 +81,15 @@ def normalize_message(message) -> dict[str, object]:
     event_id = payload.get("event_id")
     if event_id is not None and not isinstance(event_id, str):
         raise ValueError("event.event_id must be a string when provided")
-    event_id = event_id or str(
-        uuid.uuid5(uuid.NAMESPACE_URL, f"{message.topic()}:{message.partition()}:{message.offset()}")
-    )
+    message_identity = f"{message.topic()}:{message.partition()}:{message.offset()}"
+    event_id = event_id or str(uuid.uuid5(uuid.NAMESPACE_URL, message_identity))
     return {
         "id": payload["id"],
         "data": payload["data"].strip(),
         "event_id": event_id,
         "kafka_partition": message.partition(),
         "kafka_offset": message.offset(),
-        "ingested_at": datetime.now(timezone.utc).isoformat(),
+        "ingested_at": datetime.now(UTC).isoformat(),
     }
 
 

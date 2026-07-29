@@ -6,6 +6,7 @@ USER airflow
 RUN python -m venv /home/airflow/iceberg_env && \
     /home/airflow/iceberg_env/bin/pip install --no-cache-dir \
       confluent-kafka==2.12.2 \
+      numpy==1.26.4 \
       pyarrow==14.0.1 \
       "pyiceberg[sql-postgres,pyarrow]==0.6.0" \
       psycopg2-binary==2.9.9
