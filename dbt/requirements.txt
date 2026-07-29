@@ -1,1 +1,1 @@
-dbt-trino==1.10.2
+dbt-trino==1.10.3
