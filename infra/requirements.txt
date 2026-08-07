@@ -1,5 +1,5 @@
 confluent-kafka==2.12.2
-numpy==1.26.4
+numpy==2.5.1
 pyarrow==14.0.1
 pyiceberg[sql-postgres,pyarrow]==0.6.0
 psycopg2-binary==2.9.12
