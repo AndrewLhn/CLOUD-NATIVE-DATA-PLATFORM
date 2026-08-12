@@ -1,2 +1,2 @@
 # Dependencies for the host-side producer documented in README.md.
-confluent-kafka==2.12.2
+confluent-kafka==2.15.0
