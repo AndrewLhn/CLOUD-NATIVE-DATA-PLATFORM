@@ -1,20 +1,12 @@
 # Runbook: data-quality incident
 
-## Purpose
-
-Use this runbook when a dbt quality check, CI validation, or end-to-end pipeline run
-fails. The goal is to prevent unverified data from being treated as a trustworthy
-analytics output, while restoring service through a controlled and repeatable path.
-
 ## Triage
 
-1. Record the failing workflow, DAG run, model, test, and source event identifiers.
-2. Determine whether the failure blocks a local demonstration, a transformation build,
-   or a downstream metric.
-3. Stop using the affected mart as a trusted result until the failure is understood.
-4. Do not delete raw events or rewrite source data merely to make a test pass.
+1. Record the failed DAG run, dbt model or test, and Kafka topic/partition/offset.
+2. Stop using the affected mart until the failure is understood.
+3. Keep raw records and DLQ messages; do not delete evidence to make a test pass.
 
-## Initial checks
+## Checks
 
 ~~~bash
 docker compose ps
@@ -23,42 +15,24 @@ make validate
 make dbt-test
 ~~~
 
-For a GitHub Actions failure, download and inspect the Compose log artifact from the
-end-to-end workflow.
+For GitHub Actions failures, download the Compose log artifact from the E2E run.
 
-## Diagnose by symptom
+## Common cases
 
-| Symptom | Likely investigation |
+| Symptom | Check |
 | --- | --- |
-| Kafka or producer failure | Confirm Kafka health, topic availability, and producer configuration. |
-| Airflow task failure | Inspect task logs, execution timeout, service dependencies, and object-store settings. |
-| dbt uniqueness failure | Identify repeated source event identifiers and determine whether the source retried or the deduplication rule changed. |
-| dbt relationship failure | Verify that the upstream dimension and fact were built from the same ingestion window. |
-| Invalid timestamp or null value | Inspect the raw event and contract assumptions; do not coerce silently without a documented decision. |
-| E2E regression | Compare the failing service logs with the most recent passing workflow and reproduce locally. |
+| Invalid event | Inspect the DLQ message and JSON Schema error |
+| Duplicate fact | Compare raw source event IDs with stg_kafka_events |
+| Airflow failure | Inspect the failed task and service health |
+| Reconciliation failure | Compare order, payment, and refund events for the business date |
+| E2E failure | Reproduce locally and inspect Compose logs |
 
 ## Recovery
 
-1. Correct the root cause in code, configuration, or documented source data.
-2. Add or update a test if the incident exposed an untested failure mode.
-3. Re-run the affected Airflow task or the local end-to-end command.
-4. Rebuild dbt models and run tests.
-5. Confirm the expected records and metrics with Trino.
-6. Record the change in an ADR or issue when it alters architecture, contract, or metric
-   semantics.
+1. Correct the source, contract, or transformation issue.
+2. Add a test if the failure mode was not covered.
+3. Re-run the Airflow task.
+4. Run dbt build and dbt test.
+5. Verify the affected mart with Trino.
 
-## Completion criteria
-
-An incident is resolved only when:
-
-- the direct failure no longer reproduces;
-- the relevant validation and dbt tests pass;
-- the recovery did not discard raw evidence;
-- any changed business rule is documented;
-- a follow-up is created for remaining monitoring or contract gaps.
-
-## Escalation boundary
-
-This repository is a local reference platform. A production adaptation would add source
-owners, severity levels, a communication channel, freshness objectives, alert routing, and
-a defined decision on whether finance or operations may consume stale data.
+Close the incident only after validation passes and the changed rule is documented.
