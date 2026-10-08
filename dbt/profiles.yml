@@ -1,4 +1,4 @@
-cloud_native_data_platform:
+ledgerline:
   target: dev
   outputs:
     dev:
