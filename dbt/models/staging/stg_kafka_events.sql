@@ -1,12 +1,17 @@
 with source_events as (
     select
-        cast(id as bigint) as event_id,
-        trim(data) as event_payload,
+        cast(id as bigint) as event_sequence,
         event_id as source_event_id,
+        event_type,
+        cast(schema_version as integer) as schema_version,
+        from_iso8601_timestamp(occurred_at) as event_occurred_at,
+        from_iso8601_timestamp(ingested_at) as event_ingested_at,
+        source_system,
+        correlation_id,
+        trim(data) as event_payload,
         cast(kafka_partition as integer) as kafka_partition,
-        cast(kafka_offset as bigint) as kafka_offset,
-        from_iso8601_timestamp(ingested_at) as ingested_at
-    from {{ source('raw', 'kafka_events') }}
+        cast(kafka_offset as bigint) as kafka_offset
+    from {{ source('raw', 'ledgerline_events') }}
 ),
 deduplicated_events as (
     select
@@ -19,12 +24,17 @@ deduplicated_events as (
 )
 
 select
-    event_id,
-    event_payload,
+    event_sequence,
     source_event_id,
+    event_type,
+    schema_version,
+    event_occurred_at,
+    event_ingested_at,
+    source_system,
+    correlation_id,
+    event_payload,
     kafka_partition,
     kafka_offset,
-    ingested_at,
-    md5(concat(cast(event_id as varchar), '|', event_payload)) as event_hash
+    md5(concat(source_event_id, '|', event_payload)) as event_hash
 from deduplicated_events
 where row_number = 1
