@@ -1,90 +1,49 @@
 # Ledgerline
 
-> A production-inspired event-lakehouse reference platform for trustworthy operational analytics.
-
-**Ledgerline** is the portfolio name for this repository. The GitHub repository remains
-CLOUD-NATIVE-DATA-PLATFORM until a separate rename is approved.
-
-The reference business case is a multi-channel retailer that needs a traceable, reliable
-path from operational events to analytics. Finance, operations, and product teams should
-be able to answer a basic question with confidence: *where did this number come from, and
-can the pipeline be safely rerun when the source is late or wrong?*
+Local event pipeline for retail operations:
 
 ~~~text
-Versioned Ledgerline events → Kafka → Airflow batch ingestion → Apache Iceberg on MinIO
-                                                                                 ↓
-                                                                        Trino + dbt
-                                                                                 ↓
-                                           finance-ready facts, daily metrics, reconciliation
+Kafka -> Airflow -> Iceberg / MinIO -> Trino -> dbt
 ~~~
 
-It is deliberately local-first and reproducible. The stack runs with Docker Compose and
-does not require a cloud account.
+The project validates versioned operational events, writes valid records to Iceberg, sends
+invalid records to a Kafka DLQ, and builds a daily payment-to-revenue reconciliation.
 
-## What is implemented
+## Components
 
-- A versioned JSON Schema contract for synthetic order, payment, refund, and inventory events.
-- Runtime contract validation; invalid messages are sent to a Kafka dead-letter topic.
-- An Airflow DAG that consumes batches with retries and an execution timeout.
-- Immutable Iceberg storage backed by MinIO, queried through Trino.
-- dbt staging, idempotent event facts, payload deduplication, daily metrics, and a daily
-  payment-to-revenue reconciliation mart.
-- Unit tests for contract validation and producer scenarios.
-- A full-stack E2E scenario covering a duplicate event, an invalid event, DLQ routing, and
-  a passing daily reconciliation.
-- Docker Compose, CI validation, Ruff linting, and a separate end-to-end workflow.
-- A small Terraform prototype retained for reference only; it is **not** a supported deployment path.
-
-See [the architecture](docs/architecture.md) for component responsibilities and operational
-properties, and [the business context](docs/business-context.md) for metric scope and
-ownership.
-
-## Engineering principles
-
-| Principle | How it is applied |
+| Component | Role |
 | --- | --- |
-| Versioned contracts | Every event declares its type, schema version, occurrence time, source system, and correlation key. |
-| Replayability | Raw events are persisted in Iceberg; transformations can be rebuilt from stored data. |
-| At-least-once ingestion | Raw duplicates are possible after replay; dbt retains one fact per source event identifier. |
-| Data quality | Contract validation, dbt tests, unit tests, CI, and E2E protect separate failure modes. |
-| Reconciliation | Net captured cash is compared with synthetic recognised revenue for every business date. |
-| Honest scope | The reference platform does not claim production deployment or real customer data. |
+| Kafka | Event transport and dead-letter topic |
+| Airflow | Batch ingestion and retries |
+| Iceberg + MinIO | Raw event storage |
+| Trino | SQL query engine |
+| dbt | Event models, quality checks, and reconciliation |
+| GitHub Actions | Unit tests, linting, and E2E workflow |
 
-## Architecture
+## Event contract
 
-~~~mermaid
-flowchart LR
-    P[Versioned event producer] --> K[Kafka]
-    C[JSON Schema validation] -. validates .-> P
-    K --> A[Airflow batch DAG]
-    A --> DLQ[Kafka dead-letter topic]
-    A --> I[Iceberg raw events]
-    I --> O[MinIO object storage]
-    I --> T[Trino]
-    T --> D[dbt]
-    D --> F[Event facts and reconciliation mart]
-    Q[Unit tests, dbt tests, CI, E2E] -. validates .-> D
+The current contract supports:
+
+~~~text
+order_created
+payment_captured
+refund_issued
+inventory_adjusted
 ~~~
 
-For component responsibilities, reliability properties, and failure modes, read
-[docs/architecture.md](docs/architecture.md).
+Each event contains a source event ID, type, schema version, occurrence time, source system,
+correlation ID, and event-specific data. The full schema is in
+[contracts/kafka_event.schema.json](contracts/kafka_event.schema.json).
 
-## Quick start
+Invalid payloads are sent to the ledgerline_events_dlq topic with the validation error and
+Kafka location.
 
-### Prerequisites
+## Run locally
 
-- Docker and Docker Compose
-- Python 3.12+
-
-Install the small host-side dependency set used by the producer and unit tests:
+Requirements: Docker, Docker Compose, and Python 3.12+.
 
 ~~~bash
 python3 -m pip install -r requirements.txt
-~~~
-
-### Start the stack
-
-~~~bash
 cp .env.example .env
 docker compose up -d --build
 ~~~
@@ -94,100 +53,76 @@ Local endpoints:
 | Service | Address |
 | --- | --- |
 | Airflow | http://localhost:8080 |
-| MinIO Console | http://localhost:9001 |
+| MinIO | http://localhost:9001 |
 | Trino | http://localhost:8082 |
 | Kafka | localhost:9092 |
 
-### Exercise the Ledgerline scenario
-
-Publish a reconciled order, payment, refund, and inventory scenario, then trigger the
-ingestion DAG:
+Publish the sample flow and run ingestion:
 
 ~~~bash
 python3 infra/producer.py --scenario ledgerline
 docker compose exec airflow-standalone airflow dags trigger kafka_to_iceberg
-~~~
-
-Build transformations and run the quality checks:
-
-~~~bash
 make dbt-build
-make dbt-test
 ~~~
 
-Inspect the finance mart through Trino:
+Check the reconciliation result:
 
 ~~~sql
 SELECT *
 FROM iceberg.analytics.mart_daily_reconciliation;
 ~~~
 
-The sample scenario produces EUR 100.00 of orders, EUR 100.00 of captured payments, and
-EUR 20.00 of refunds. It therefore reconciles EUR 80.00 of net cash with EUR 80.00 of
-synthetic recognised revenue.
+The sample publishes EUR 100.00 of orders, EUR 100.00 of captured payments, and EUR 20.00
+of refunds. Net cash and recognised revenue both equal EUR 80.00.
 
-### Demonstrate failure handling
+## Test cases
 
 ~~~bash
 python3 infra/producer.py --scenario duplicate
 python3 infra/producer.py --scenario invalid
 ~~~
 
-The duplicate reuses an existing source event identifier and is removed by the dbt
-idempotency rule. The invalid payload is rejected by the JSON Schema validator and sent
-to the ledgerline_events_dlq topic.
+The duplicate has an existing source event ID and is removed in the dbt staging model.
+The invalid payload is rejected by the consumer and written to the DLQ.
 
-## Validation
+The E2E workflow verifies:
 
-Run the local quality suite before opening a pull request:
+- five valid raw records after the duplicate scenario;
+- four deduplicated event facts;
+- one invalid record in the DLQ;
+- a passing daily reconciliation.
+
+## Data models
+
+| Model | Purpose |
+| --- | --- |
+| stg_kafka_events | Typed and deduplicated event envelope |
+| fct_kafka_events | Analytics event fact |
+| fct_ledgerline_events | Parsed order, payment, refund, and inventory fields |
+| mart_event_metrics_daily | Daily event metrics |
+| mart_daily_reconciliation | Daily net-cash and revenue comparison |
+
+## Checks
 
 ~~~bash
-python3 -m pip install -r requirements.txt
-python3 -m pip install -r requirements-dev.txt
 python3 -m unittest discover -s tests -v
 make validate
 make lint
+make dbt-test
 ~~~
 
-GitHub Actions runs configuration validation, Python compilation, contract unit tests,
-a producer import check, and Ruff on every pull request and push to main. The separate
-end-to-end workflow exercises the full Compose stack and saves Compose logs as an artifact
-when it fails.
+CI runs configuration validation, unit tests, producer import validation, and Ruff on every
+push and pull request. E2E runs on pull requests or manually.
 
-## Data model and quality controls
+## Notes
 
-| Layer | Model | Purpose |
-| --- | --- | --- |
-| Staging | stg_kafka_events | Types envelope metadata, preserves event and ingestion time, and retains one record per source event identifier. |
-| Mart | dim_event_payloads | Deduplicates payload content by hash. |
-| Mart | fct_kafka_events | Provides analytics-ready, deduplicated event facts. |
-| Mart | fct_ledgerline_events | Parses order, payment, refund, and inventory fields from the event payload. |
-| Mart | mart_event_metrics_daily | Tracks event volume and source-event cardinality by business date. |
-| Mart | mart_daily_reconciliation | Compares net captured cash with recognised revenue and emits passed or failed status. |
+- Raw ingestion is at-least-once. dbt deduplicates transformed facts by source event ID.
+- The supported runtime is Docker Compose. Terraform under infra is an archived prototype.
+- The repository uses only synthetic data.
 
-Quality controls cover contract conformance, source event uniqueness, accepted event types,
-valid timestamps, fact-to-dimension relationships, financial event completeness, duplicate
-handling, DLQ routing, and reconciliation variance.
+## Documentation
 
-## Operational documentation
-
-- [Architecture and operational properties](docs/architecture.md)
-- [Business context and metric direction](docs/business-context.md)
-- [ADR 001 — local-first reference architecture](docs/adr/001-local-first-reference-architecture.md)
-- [ADR 002 — event idempotency and late data](docs/adr/002-event-idempotency-and-late-data.md)
-- [ADR 003 — data quality as a deployment gate](docs/adr/003-data-quality-as-a-deployment-gate.md)
+- [Architecture](docs/architecture.md)
+- [Domain and reconciliation rules](docs/business-context.md)
 - [Data-quality incident runbook](docs/runbooks/data-quality-incident.md)
-
-## Configuration and safety
-
-Copy .env.example to .env and use only local development credentials. Do not commit
-environment files, Terraform state, local Airflow logs, dbt build artefacts, generated
-warehouse data, or Docker runtime data. The repository .gitignore is intentionally
-configured to exclude them from future commits.
-
-## Roadmap
-
-The next valuable extension is an ingestion audit table recording DAG run, Kafka
-partition/offset range, accepted and rejected record counts, and batch status. That will
-make replay, operational metrics, and incident investigation visible in the warehouse
-rather than only in logs.
+- [Architecture decisions](docs/adr)
