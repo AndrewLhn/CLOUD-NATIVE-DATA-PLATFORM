@@ -1,1 +1,3 @@
-# Dependencies for the host-side producer and contract tests.\nconfluent-kafka==2.12.2\njsonschema==4.25.1\n
+# Dependencies for the host-side producer and contract tests.
+confluent-kafka==2.12.2
+jsonschema==4.25.1
