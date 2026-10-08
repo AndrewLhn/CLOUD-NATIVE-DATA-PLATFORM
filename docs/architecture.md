@@ -7,68 +7,71 @@ repository runs a live customer workload. It demonstrates a locally reproducible
 lakehouse path and the controls a data engineer should design before exposing analytics
 to finance, operations, or product users.
 
-The current functional slice handles generic events. The retail-oriented order, payment,
-refund, and inventory vocabulary is documented as the next domain extension in
-[Business context](business-context.md).
+The current functional slice implements a synthetic retail domain: order creation, payment
+capture, refund issuance, and inventory adjustments. It turns those events into a tested
+daily payment-to-revenue reconciliation.
 
 ## System context
 
 ~~~mermaid
 flowchart LR
-    Producer[Python sample producer] --> Kafka[Kafka topic]
-    Contract[JSON event contract] -. documents .-> Kafka
-    Kafka --> Airflow[Airflow batch DAG]
-    Airflow --> Iceberg[Iceberg tables]
+    Producer[Versioned Ledgerline producer] --> Kafka[Kafka topic]
+    Schema[JSON Schema v1] -. validates .-> Consumer
+    Kafka --> Consumer[Airflow batch consumer]
+    Consumer --> DLQ[Dead-letter topic]
+    Consumer --> Iceberg[Iceberg raw events]
     Iceberg --> MinIO[MinIO object storage]
     Iceberg --> Trino[Trino query engine]
     Trino --> dbt[dbt transformation layer]
-    dbt --> Marts[Event fact and daily metrics marts]
-    Checks[dbt tests, CI, E2E] -. validates .-> Marts
+    dbt --> Marts[Event facts and reconciliation mart]
+    Checks[Unit tests, dbt tests, CI, E2E] -. validates .-> Marts
 ~~~
 
 ## Component responsibilities
 
 | Component | Responsibility | Operational note |
 | --- | --- | --- |
-| Python producer | Emits a reproducible sample event to Kafka. | It is intentionally a demonstration source, not an external SaaS connector. |
-| Kafka | Decouples event production from batch ingestion. | A source event identifier is retained for deduplication. |
+| Python producer | Emits reproducible valid, duplicate, and invalid Ledgerline scenarios. | It is intentionally a demonstration source, not an external SaaS connector. |
+| JSON Schema validator | Rejects unsupported versions and malformed event payloads. | Contract errors are routed to the dead-letter topic. |
+| Kafka | Decouples event production from batch ingestion. | A source event identifier is retained for downstream deduplication. |
 | Airflow | Schedules and retries the Kafka-to-Iceberg batch. | The DAG has retries and an execution timeout. |
-| Iceberg | Stores the queryable event history. | Table storage is object-backed and rebuildable by downstream transformations. |
-| MinIO | Provides a local S3-compatible object store. | It makes the development stack reproducible without cloud credentials. |
+| Iceberg | Stores queryable raw event history. | Raw delivery is at-least-once; raw duplicates are retained as evidence. |
+| MinIO | Provides local S3-compatible storage. | It makes the development stack reproducible without cloud credentials. |
 | Trino | Queries Iceberg data for transformation and inspection. | dbt uses it as the warehouse adapter. |
-| dbt | Builds staging, fact, dimension, and daily metric models. | Tests are part of the transformation contract. |
-| GitHub Actions | Runs validation, linting, and end-to-end checks. | The E2E workflow uploads Compose logs when it fails. |
+| dbt | Builds typed events, domain facts, metrics, and reconciliation output. | Tests are part of the transformation contract. |
+| GitHub Actions | Runs unit, static, and end-to-end validation. | The E2E workflow uploads Compose logs when it fails. |
 
 ## Data flow
 
-1. A source produces a JSON event with a business-independent numeric identifier, payload,
-   source event UUID, and occurrence timestamp.
-2. Kafka buffers the event until the Airflow batch task consumes it.
-3. The Airflow task writes the event data to Iceberg.
-4. dbt stages source fields and selects one row per source event identifier.
-5. dbt materialises the payload dimension, event fact, and daily metrics mart.
-6. Generic and singular tests validate the transformed models before the run is treated as
-   successful.
+1. The producer sends a version-1 Ledgerline event to Kafka.
+2. The Airflow consumer decodes JSON and validates the event against the schema.
+3. An invalid event is written to the dead-letter topic with its Kafka offset and reason.
+4. A valid event is appended to Iceberg with its source event ID, event time, ingestion
+   time, source system, and correlation key.
+5. dbt retains one transformed row per source event identifier.
+6. dbt parses financial and inventory fields from the payload.
+7. The reconciliation mart compares net captured cash with synthetic recognised revenue.
+8. A variance outside the threshold fails the dbt build.
 
 ## Reliability properties
 
 | Property | Current control | Boundary |
-| --- | --- | ---|
+| --- | --- | --- |
 | Repeatable local setup | Docker Compose and example environment configuration. | Intended for local development, not multi-region availability. |
-| Pipeline retries | Airflow retries failed batch work three times. | Retry policy is not a replacement for source-level dead-letter handling. |
-| Idempotent modelling | The staging model deduplicates by source event identifier. | The raw ingestion writer must preserve the identifier for this to work. |
-| Rebuildable transformations | dbt reads persisted Iceberg data. | Raw retention and catalog availability remain dependencies. |
-| Quality gate | dbt tests plus CI and E2E workflows. | Tests detect defined failure modes; they cannot prove all business semantics. |
-| Failure diagnostics | E2E uploads Compose logs on failure. | A production deployment would add metrics, alerts, and on-call routing. |
+| Contract enforcement | JSON Schema validation before Iceberg write and DLQ routing on failure. | The sample supports schema version 1 only. |
+| At-least-once delivery | Kafka offsets are committed after the Iceberg append. | A crash in between can duplicate raw records; dbt deduplicates transformed facts. |
+| Late-data visibility | Both occurrence and ingestion timestamps are stored. | Explicit late-arrival SLA metrics are the next extension. |
+| Quality gate | Contract unit tests, dbt tests, CI, and E2E workflows. | Tests detect defined failure modes; they cannot prove all business semantics. |
+| Failure diagnostics | DLQ metadata and E2E Compose-log artifacts. | A production deployment would add alerts and on-call routing. |
 
 ## Failure modes and response
 
 | Failure mode | Detection | Initial response |
 | --- | --- | --- |
-| Kafka is unavailable | Producer or consumer fails; Compose health checks fail. | Confirm service health, restore connectivity, then replay the batch. |
-| Batch task fails | Airflow task state and logs show the error. | Review the failed task; correct configuration or data issue; rerun the task. |
-| Duplicate source event | dbt uniqueness and fact-level tests fail. | Find the duplicate source event identifier and verify producer behaviour. |
-| Invalid transformed record | dbt test fails in the tools profile or CI. | Stop publication of downstream metrics and follow the incident runbook. |
+| Invalid event contract | Consumer sends the message to the dead-letter topic. | Inspect the validation error, payload, topic, partition, and offset. |
+| Duplicate source event | Raw count exceeds transformed-fact count; dbt fact retains one source event. | Investigate producer retry behaviour; do not erase raw evidence. |
+| Batch task failure | Airflow task state and logs show the error. | Review the failed task; correct configuration or data issue; rerun the task. |
+| Reconciliation variance | dbt reconciliation test fails. | Stop use of the affected business date; inspect order, payment, and refund events. |
 | Full-stack E2E regression | GitHub Actions fails and uploads Compose logs. | Review the artifact before merging or releasing a change. |
 
 See the [data-quality incident runbook](runbooks/data-quality-incident.md) for the detailed
