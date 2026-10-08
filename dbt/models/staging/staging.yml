@@ -2,41 +2,76 @@ version: 2
 
 sources:
   - name: raw
-    description: Kafka events persisted by the Airflow ingestion DAG.
+    description: Versioned Ledgerline events persisted by the Airflow ingestion DAG.
     database: iceberg
-    schema: my_db
+    schema: ledgerline_raw
     tables:
-      - name: kafka_events
-        identifier: my_table
+      - name: ledgerline_events
+        identifier: events
         columns:
           - name: id
-            tests: [not_null]
+            tests: [not_null, is_positive]
           - name: data
             tests: [not_null, not_empty_string]
           - name: event_id
             tests: [not_null]
+          - name: event_type
+            tests:
+              - not_null
+              - accepted_values:
+                  values: ["order_created", "payment_captured", "refund_issued", "inventory_adjusted"]
+          - name: schema_version
+            tests:
+              - not_null
+              - accepted_values:
+                  values: [1]
+          - name: occurred_at
+            tests: [not_null]
+          - name: source_system
+            tests:
+              - not_null
+              - accepted_values:
+                  values: ["storefront", "payment_gateway", "erp"]
+          - name: correlation_id
+            tests: [not_null, not_empty_string]
           - name: kafka_partition
             tests: [not_null, is_non_negative]
           - name: kafka_offset
             tests: [not_null, is_non_negative]
           - name: ingested_at
-            tests: [not_null, not_future_timestamp]
+            tests: [not_null]
 
 models:
   - name: stg_kafka_events
-    description: Typed and normalized Kafka events.
+    description: Typed, versioned, and deduplicated Ledgerline events.
     columns:
-      - name: event_id
+      - name: event_sequence
         tests: [not_null, is_positive]
+      - name: source_event_id
+        tests: [not_null, unique]
+      - name: event_type
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["order_created", "payment_captured", "refund_issued", "inventory_adjusted"]
+      - name: schema_version
+        tests:
+          - not_null
+          - accepted_values:
+              values: [1]
+      - name: event_occurred_at
+        tests: [not_null, not_future_timestamp]
+      - name: event_ingested_at
+        tests: [not_null, not_future_timestamp]
+      - name: source_system
+        tests: [not_null, not_empty_string]
+      - name: correlation_id
+        tests: [not_null, not_empty_string]
       - name: event_payload
         tests: [not_null, not_empty_string]
       - name: event_hash
         tests: [not_null]
-      - name: source_event_id
-        tests: [not_null, unique]
       - name: kafka_partition
         tests: [not_null, is_non_negative]
       - name: kafka_offset
         tests: [not_null, is_non_negative]
-      - name: ingested_at
-        tests: [not_null, not_future_timestamp]
