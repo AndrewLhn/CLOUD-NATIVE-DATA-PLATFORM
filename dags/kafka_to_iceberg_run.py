@@ -5,11 +5,10 @@ from datetime import UTC, datetime
 
 import pyarrow as pa
 from confluent_kafka import Consumer, Producer
+from ledgerline_contract import ContractValidationError, validate_event
 from pyiceberg.catalog import load_catalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.types import IntegerType, LongType, StringType
-
-from ledgerline_contract import ContractValidationError, validate_event
 
 TABLE_IDENTIFIER = "ledgerline_raw.events"
 TOPIC = os.getenv("KAFKA_TOPIC", "ledgerline_events")
