@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta
 
 from airflow.operators.bash import BashOperator
-
 from airflow import DAG
 
 
