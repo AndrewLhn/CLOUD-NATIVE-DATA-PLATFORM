@@ -1,8 +1,8 @@
-name: cloud_native_data_platform
+name: ledgerline
 version: "1.0.0"
 config-version: 2
 
-profile: cloud_native_data_platform
+profile: ledgerline
 
 model-paths: ["models"]
 macro-paths: ["macros"]
@@ -10,7 +10,7 @@ test-paths: ["tests"]
 clean-targets: ["target", "dbt_packages", "logs"]
 
 models:
-  cloud_native_data_platform:
+  ledgerline:
     staging:
       +materialized: table
       +schema: analytics
