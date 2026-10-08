@@ -1,7 +1,9 @@
 from datetime import datetime, timedelta
 
+
 from airflow import DAG
 from airflow.operators.bash import BashOperator
+
 
 with DAG(
     dag_id="kafka_to_iceberg",
