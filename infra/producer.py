@@ -1,10 +1,16 @@
 import argparse
 import json
 import os
+import sys
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from confluent_kafka import Producer
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT / "dags") not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT / "dags"))
 
 from ledgerline_contract import validate_event
 
