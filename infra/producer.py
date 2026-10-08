@@ -1,15 +1,18 @@
+import argparse
 import json
 import os
-import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from confluent_kafka import Producer
 
+from ledgerline_contract import validate_event
+
 BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "127.0.0.1:9092")
-TOPIC = os.getenv("KAFKA_TOPIC", "my_topic")
+TOPIC = os.getenv("KAFKA_TOPIC", "ledgerline_events")
 
 
-def delivery_report(error, message):
+def delivery_report(error, message) -> None:
     if error is not None:
         raise RuntimeError(f"Kafka delivery failed: {error}")
     print(
@@ -18,15 +21,106 @@ def delivery_report(error, message):
     )
 
 
-def main() -> None:
+def build_ledgerline_events(occurred_at: str | None = None) -> list[dict[str, Any]]:
+    """Return a small, reconciled synthetic retail scenario."""
+
+    timestamp = occurred_at or (datetime.now(UTC) - timedelta(minutes=5)).isoformat()
+    order_id = "ord_1001"
+    payment_id = "pay_1001"
+
+    return [
+        {
+            "id": 1,
+            "event_id": "11111111-1111-4111-8111-111111111111",
+            "event_type": "order_created",
+            "schema_version": 1,
+            "occurred_at": timestamp,
+            "source_system": "storefront",
+            "correlation_id": order_id,
+            "data": {
+                "order_id": order_id,
+                "customer_id": "cust_42",
+                "channel": "web",
+                "currency": "EUR",
+                "amount": 100.00
+            }
+        },
+        {
+            "id": 2,
+            "event_id": "22222222-2222-4222-8222-222222222222",
+            "event_type": "payment_captured",
+            "schema_version": 1,
+            "occurred_at": timestamp,
+            "source_system": "payment_gateway",
+            "correlation_id": order_id,
+            "data": {
+                "payment_id": payment_id,
+                "order_id": order_id,
+                "currency": "EUR",
+                "amount": 100.00
+            }
+        },
+        {
+            "id": 3,
+            "event_id": "33333333-3333-4333-8333-333333333333",
+            "event_type": "refund_issued",
+            "schema_version": 1,
+            "occurred_at": timestamp,
+            "source_system": "payment_gateway",
+            "correlation_id": order_id,
+            "data": {
+                "refund_id": "ref_1001",
+                "payment_id": payment_id,
+                "order_id": order_id,
+                "currency": "EUR",
+                "amount": 20.00
+            }
+        },
+        {
+            "id": 4,
+            "event_id": "44444444-4444-4444-8444-444444444444",
+            "event_type": "inventory_adjusted",
+            "schema_version": 1,
+            "occurred_at": timestamp,
+            "source_system": "erp",
+            "correlation_id": order_id,
+            "data": {
+                "adjustment_id": "adj_1001",
+                "product_id": "sku_espresso",
+                "location_id": "wh_kyiv",
+                "quantity_delta": -1
+            }
+        }
+    ]
+
+
+def build_messages(scenario: str) -> list[bytes]:
+    events = build_ledgerline_events()
+
+    if scenario == "ledgerline":
+        return [json.dumps(validate_event(event)).encode("utf-8") for event in events]
+    if scenario == "duplicate":
+        return [json.dumps(validate_event(events[1])).encode("utf-8")]
+    if scenario == "invalid":
+        return [b'{"event_id": "not-a-valid-ledgerline-event"}']
+
+    raise ValueError(f"Unsupported scenario: {scenario}")
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Publish synthetic Ledgerline events to Kafka.")
+    parser.add_argument(
+        "--scenario",
+        choices=["ledgerline", "duplicate", "invalid"],
+        default="ledgerline",
+        help="Synthetic message set to publish."
+    )
+    args = parser.parse_args(argv)
+
     producer = Producer({"bootstrap.servers": BOOTSTRAP_SERVERS})
-    data = {
-        "id": 1,
-        "data": "hello world from python",
-        "event_id": str(uuid.uuid4()),
-        "occurred_at": datetime.now(UTC).isoformat(),
-    }
-    producer.produce(TOPIC, json.dumps(data).encode("utf-8"), on_delivery=delivery_report)
+    messages = build_messages(args.scenario)
+    for message in messages:
+        producer.produce(TOPIC, message, on_delivery=delivery_report)
 
     pending_messages = producer.flush(10)
     if pending_messages:
