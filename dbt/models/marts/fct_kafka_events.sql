@@ -1,10 +1,15 @@
 select
-    event_id,
+    event_sequence,
     source_event_id,
+    event_type,
+    schema_version,
+    event_occurred_at,
+    event_ingested_at,
+    source_system,
+    correlation_id,
     event_hash,
     event_payload,
     kafka_partition,
     kafka_offset,
-    ingested_at,
     current_timestamp as transformed_at
 from {{ ref('stg_kafka_events') }}
