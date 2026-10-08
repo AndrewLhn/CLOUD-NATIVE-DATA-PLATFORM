@@ -1,7 +1,6 @@
 import json
 import logging
 import os
-import uuid
 from datetime import UTC, datetime
 
 import pyarrow as pa
@@ -10,20 +9,34 @@ from pyiceberg.catalog import load_catalog
 from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.types import IntegerType, LongType, StringType
 
-TABLE_IDENTIFIER = "my_db.my_table"
-TOPIC = os.getenv("KAFKA_TOPIC", "my_topic")
+from ledgerline_contract import ContractValidationError, validate_event
+
+TABLE_IDENTIFIER = "ledgerline_raw.events"
+TOPIC = os.getenv("KAFKA_TOPIC", "ledgerline_events")
 DLQ_TOPIC = os.getenv("KAFKA_DLQ_TOPIC", f"{TOPIC}_dlq")
+BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:29092")
+CONSUMER_GROUP = os.getenv("KAFKA_CONSUMER_GROUP", "ledgerline-iceberg-consumer")
 LOGGER = logging.getLogger(__name__)
 EVENT_SCHEMA = pa.schema([
     ("id", pa.int64()),
     ("data", pa.string()),
     ("event_id", pa.string()),
+    ("event_type", pa.string()),
+    ("schema_version", pa.int32()),
+    ("occurred_at", pa.string()),
+    ("source_system", pa.string()),
+    ("correlation_id", pa.string()),
     ("kafka_partition", pa.int32()),
     ("kafka_offset", pa.int64()),
     ("ingested_at", pa.string()),
 ])
 REQUIRED_COLUMNS = {
     "event_id": StringType(),
+    "event_type": StringType(),
+    "schema_version": IntegerType(),
+    "occurred_at": StringType(),
+    "source_system": StringType(),
+    "correlation_id": StringType(),
     "kafka_partition": IntegerType(),
     "kafka_offset": LongType(),
     "ingested_at": StringType(),
@@ -48,8 +61,8 @@ def get_catalog():
 
 
 def get_table(catalog):
-    if not catalog.namespace_exists("my_db"):
-        catalog.create_namespace("my_db")
+    if not catalog.namespace_exists("ledgerline_raw"):
+        catalog.create_namespace("ledgerline_raw")
 
     try:
         table = catalog.load_table(TABLE_IDENTIFIER)
@@ -69,24 +82,18 @@ def normalize_message(message) -> dict[str, object]:
     try:
         payload = json.loads(message.value().decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise ValueError("message value must be UTF-8 JSON") from error
+        raise ContractValidationError("message value must be UTF-8 JSON") from error
 
-    if not isinstance(payload, dict):
-        raise ValueError("event must be a JSON object")
-    if type(payload.get("id")) is not int or payload["id"] <= 0:
-        raise ValueError("event.id must be a positive integer")
-    if not isinstance(payload.get("data"), str) or not payload["data"].strip():
-        raise ValueError("event.data must be a non-empty string")
-
-    event_id = payload.get("event_id")
-    if event_id is not None and not isinstance(event_id, str):
-        raise ValueError("event.event_id must be a string when provided")
-    message_identity = f"{message.topic()}:{message.partition()}:{message.offset()}"
-    event_id = event_id or str(uuid.uuid5(uuid.NAMESPACE_URL, message_identity))
+    validated_event = validate_event(payload)
     return {
-        "id": payload["id"],
-        "data": payload["data"].strip(),
-        "event_id": event_id,
+        "id": validated_event["id"],
+        "data": json.dumps(validated_event["data"], separators=(",", ":"), sort_keys=True),
+        "event_id": validated_event["event_id"],
+        "event_type": validated_event["event_type"],
+        "schema_version": validated_event["schema_version"],
+        "occurred_at": validated_event["occurred_at"],
+        "source_system": validated_event["source_system"],
+        "correlation_id": validated_event["correlation_id"],
         "kafka_partition": message.partition(),
         "kafka_offset": message.offset(),
         "ingested_at": datetime.now(UTC).isoformat(),
@@ -114,16 +121,17 @@ def run_sync(max_messages: int = 100, poll_timeout: float = 1.0) -> int:
     table = get_table(catalog)
     consumer = Consumer(
         {
-            "bootstrap.servers": "kafka:29092",
-            "group.id": "airflow-iceberg-consumer",
+            "bootstrap.servers": BOOTSTRAP_SERVERS,
+            "group.id": CONSUMER_GROUP,
             "auto.offset.reset": "earliest",
             "enable.auto.commit": False,
         }
     )
-    dlq_producer = Producer({"bootstrap.servers": "kafka:29092"})
+    dlq_producer = Producer({"bootstrap.servers": BOOTSTRAP_SERVERS})
     consumer.subscribe([TOPIC])
 
-    batch = []
+    batch: list[dict[str, object]] = []
+    rejected_count = 0
     try:
         for _ in range(max_messages):
             message = consumer.poll(poll_timeout)
@@ -133,9 +141,13 @@ def run_sync(max_messages: int = 100, poll_timeout: float = 1.0) -> int:
                 raise RuntimeError(f"Kafka error: {message.error()}")
             try:
                 batch.append(normalize_message(message))
-            except ValueError as error:
+            except ContractValidationError as error:
+                rejected_count += 1
                 send_to_dlq(dlq_producer, message, error)
-                LOGGER.warning("invalid_event_sent_to_dlq", extra={"offset": message.offset()})
+                LOGGER.warning(
+                    "invalid_event_sent_to_dlq",
+                    extra={"offset": message.offset(), "reason": str(error)},
+                )
 
         pending_dlq_messages = dlq_producer.flush(10)
         if pending_dlq_messages:
@@ -144,7 +156,10 @@ def run_sync(max_messages: int = 100, poll_timeout: float = 1.0) -> int:
         if batch:
             table.append(pa.Table.from_pylist(batch, schema=EVENT_SCHEMA))
         consumer.commit(asynchronous=False)
-        LOGGER.info("kafka_batch_committed", extra={"records_written": len(batch)})
+        LOGGER.info(
+            "kafka_batch_committed",
+            extra={"records_written": len(batch), "records_rejected": rejected_count},
+        )
         return len(batch)
     finally:
         consumer.close()
