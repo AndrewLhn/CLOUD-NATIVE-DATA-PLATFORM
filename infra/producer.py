@@ -12,7 +12,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT / "dags") not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT / "dags"))
 
-from ledgerline_contract import validate_event
+from ledgerline_contract import validate_event  # noqa: E402
 
 BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "127.0.0.1:9092")
 TOPIC = os.getenv("KAFKA_TOPIC", "ledgerline_events")
